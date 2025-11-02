@@ -1,7 +1,7 @@
 mod commandline;
 
 use comms::{Message, Transport};
-use etw::{EventHeader, ProcessEvent};
+use etw::{EtwEvent, EventHeader, ProcessEvent};
 use one_collect::ReadOnly;
 use one_collect::etw::AncillaryData;
 use one_collect::event::EventData;
@@ -48,23 +48,39 @@ fn do_etw(tx: mpsc::Sender<Vec<u8>>) {
     let mut etw = one_collect::etw::EtwSession::new().with_callstack_help(&helper);
 
     let ancillary = etw.ancillary_data();
-    let event = etw.comm_start_event();
+    let counter = Rc::new(RefCell::new(0));
 
-    // The ETW callback is synchronous; we enqueue the serialized message without awaiting.
-    let tx_clone = tx.clone();
+    // PROCESS CREATE
     let ancillary_clone = ancillary.clone();
-
-    // Also counting the number of events sent. so we can compare on host if any were dropped during transit.
-    let events_sent = Rc::new(RefCell::new(0));
-    let counter = events_sent.clone();
-
-    event.add_callback(move |data| {
-        send_event_enqueue(&tx_clone, data, &ancillary_clone)
-            .map(|v| {
-                *counter.borrow_mut() += 1;
-                v
-            })
+    let tx_clone = tx.clone();
+    let counter_clone = counter.clone();
+    etw.comm_start_event()
+        .add_callback(move |data: &EventData| {
+            // Increment event counter
+            *counter_clone.borrow_mut() += 1;
+            send_event_enqueue(
+                &tx_clone,
+                data,
+                &ancillary_clone,
+                etw::EtwEvent::SystemProcess(ProcessEvent::ProcessCreate),
+            )
             .into()
+        });
+
+    // PROCESS TERMINATE
+    let ancillary_clone = ancillary.clone();
+    let tx_clone = tx.clone();
+    let counter_clone = counter.clone();
+    etw.comm_end_event().add_callback(move |data: &EventData| {
+        // Increment event counter
+        *counter_clone.borrow_mut() += 1;
+        send_event_enqueue(
+            &tx_clone,
+            data,
+            &ancillary_clone,
+            etw::EtwEvent::SystemProcess(ProcessEvent::ProcessTerminate),
+        )
+        .into()
     });
 
     let duration = std::time::Duration::from_secs(15);
@@ -72,7 +88,7 @@ fn do_etw(tx: mpsc::Sender<Vec<u8>>) {
         .unwrap();
 
     // Send end-of-tracing message
-    let events_sent = events_sent.take();
+    let events_sent = counter.take();
     let end_buf = minicbor::to_vec(Message::TracingFinished(events_sent)).unwrap();
     let _ = tx.try_send(end_buf);
 
@@ -83,13 +99,11 @@ fn send_event_enqueue(
     tx: &mpsc::Sender<Vec<u8>>,
     data: &EventData<'_>,
     ancillary: &ReadOnly<AncillaryData>,
+    event: EtwEvent,
 ) -> anyhow::Result<()> {
     let mut header = MaybeUninit::<EventHeader>::uninit();
     ancillary.read(|e| {
-        header.write(EventHeader::from_ancillary(
-            e,
-            etw::EtwEvent::SystemProcess(ProcessEvent::ProcessCreate),
-        ));
+        header.write(EventHeader::from_ancillary(e, event));
     });
 
     // Construct the message as: CBOR(header, payload_size) || payload
@@ -98,7 +112,8 @@ fn send_event_enqueue(
 
     // Try to enqueue without blocking; if failed to send, it's dropped.
     let message = Message::EventHeader(unsafe { header.assume_init() }, payload_size);
-    match tx.try_send(minicbor::to_vec(message)?) {
+    let msg_buf = minicbor::to_vec(message)?;
+    match tx.try_send(msg_buf) {
         Ok(_) => (),
         Err(e) => {
             eprintln!("Failed to enqueue event message: {}", e);
