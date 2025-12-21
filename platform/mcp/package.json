@@ -1,0 +1,17 @@
+{
+  "name": "loonaro-mcp",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@clickhouse/client": "^1.14.0",
+    "@modelcontextprotocol/sdk": "^1.25.0",
+    "zod": "^4.2.0"
+  }
+}

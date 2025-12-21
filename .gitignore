@@ -1,14 +1,48 @@
-# Rust-specific ignores
-target/
+# Rust
+/target
+/runtime/target
+/runtime/**/target
+Cargo.lock
+**/*.rs.bk
 
-# IDE-specific ignores (adjust as needed for your IDE)
+# Node.js
+node_modules/
+.npm/
+.yarn/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Moose
+.moose/
+.moose-out/
+platform/core/.moose/
+platform/core/.moose-out/
+platform/core/dist/
+platform/core/.ts-node/
+
+# Next.js
+.next/
+out/
+build/
+dashboard/.next/
+dashboard/out/
+
+# IDEs
 .idea/
 .vscode/
+*.swp
+*.iml
 
-# Operating system specific ignores
+# OS
 .DS_Store
 Thumbs.db
 
-# Other common ignores
-*.swp
-*~
+# Project Artifacts
+box_config/
+*.log
+*.iso
+*.vhd
+*.vhdx
+output/
+staging/
